@@ -1,0 +1,102 @@
+default_config:
+logger:
+  default: error
+
+lovelace:
+  # mode: yaml
+
+input_datetime:
+  spinner_time:
+    name: Alarm Time
+    has_date: false
+    has_time: true
+
+input_number:
+  spinner_duration:
+    name: Alarm Duration
+    unit_of_measurement: min
+    initial: 12
+    min: 0
+    max: 120
+    step: 1
+
+input_select:
+  spinner_options:
+    # name: Alarm Mode
+    initial: 'Workdays When Present'
+    icon: mdi:alarm-plus
+    options:
+      - 'Off'
+      - 'Workdays When Present'
+      - 'Workdays'
+      - 'Once Only'
+      - 'Every Day'
+
+sensor:
+  - platform: time_date
+    display_options:
+      - 'time'
+
+automation:
+  - id: spinner
+    alias: Spinner
+    trigger:
+      platform: template
+      value_template: "{% set currentTimeInMinutes = ((states('sensor.time')[:2] |
+        float) * 60) + (states('sensor.time')[3:5] | float) - (states('sensor.time')
+        | float) %} {% set alarmTimeInMinutes = ((states('input_datetime.spinner_time')[:2]
+        | float) * 60) + (states('input_datetime.spinner_time')[3:5] | float) -
+        (states('input_number.spinner_duration') | float) %} {{ currentTimeInMinutes
+        == alarmTimeInMinutes }}"
+
+    condition:
+      condition: or
+      conditions:
+        - condition: state
+          entity_id: input_select.spinner_options
+          state: 'Every Day'
+        - condition: state
+          entity_id: input_select.spinner_options
+          state: 'Once Only'
+        - condition: and
+          conditions:
+            - condition: state
+              entity_id: input_select.spinner_options
+              state: 'Workdays'
+            - condition: template
+              value_template: '{{ now().weekday() < 5 }}'
+        - condition: and
+          conditions:
+            - condition: state
+              entity_id: input_select.spinner_options
+              state: 'Workdays When Present'
+            - condition: template
+              value_template: '{{ now().weekday() < 5 }}'
+            - condition: or
+              conditions:
+                - condition: state
+                  entity_id: person.chaptergy
+                  state: home
+                - condition: state
+                  entity_id: person.other_person
+                  state: home
+
+    action:
+      service: script.trigger_spinner
+
+script:
+  trigger_spinner:
+    alias: Trigger the spinner
+    sequence:
+      - service: persistent_notification.create
+        data_template:
+          title: 'Spinner'
+          message: "Spinner started with transition time of {{ states('input_number.spinner_duration') }} minutes"
+      - event: spinner_triggered
+      - condition: state
+        entity_id: input_select.spinner_options
+        state: Once Only
+      - service: input_select.select_option
+        data:
+          entity_id: input_select.spinner_options
+          option: Off
